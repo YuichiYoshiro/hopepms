@@ -31,12 +31,30 @@ export default function RegisterPage() {
         },
       })
       if (error) throw error
-      setSuccess('Registration successful. Please check your email to confirm your account.')
+
+      // Check if user was created successfully
+      if (data.user) {
+        setSuccess('Registration successful! You can now log in with your credentials.')
+        // Clear form
+        setEmail('')
+        setPassword('')
+        setFirstName('')
+        setLastName('')
+        setUsername('')
+      } else {
+        setSuccess('Registration initiated. Please check your email to confirm your account.')
+      }
     } catch (err) {
       console.error('Register error', err)
       const message = err?.message || 'Unknown registration error'
       const status = err?.status ? ` (${err.status})` : ''
-      setError(`${message}${status}`)
+
+      // Handle rate limit specifically
+      if (err?.status === 429 || message.toLowerCase().includes('rate limit')) {
+        setError('Too many registration attempts. Please wait a few minutes before trying again.')
+      } else {
+        setError(`${message}${status}`)
+      }
     }
   }
 
