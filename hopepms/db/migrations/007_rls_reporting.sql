@@ -18,9 +18,7 @@ USING (
     WHERE p.prodCode = priceHist.prodCode
       AND p.record_status = 'ACTIVE'
   )
-  OR (
-    SELECT user_type FROM public."user" WHERE userId = auth.uid()::text
-  ) IN ('ADMIN','SUPERADMIN')
+  OR public.is_current_user_admin_or_superadmin()
 );
 
 DROP POLICY IF EXISTS "salesDetail_select_active_products_or_admin" ON salesDetail;
@@ -33,9 +31,7 @@ USING (
     WHERE p.prodCode = salesDetail.prodCode
       AND p.record_status = 'ACTIVE'
   )
-  OR (
-    SELECT user_type FROM public."user" WHERE userId = auth.uid()::text
-  ) IN ('ADMIN','SUPERADMIN')
+  OR public.is_current_user_admin_or_superadmin()
 );
 
 -- Optional: INSERT/UPDATE not created here because the current frontend

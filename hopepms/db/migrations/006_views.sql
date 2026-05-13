@@ -9,7 +9,7 @@ SELECT p.prodCode,
        ph.unitPrice,
        ph.effDate,
        CASE
-         WHEN (SELECT user_type FROM public."user" WHERE userId = auth.uid()::text) IN ('ADMIN','SUPERADMIN')
+         WHEN public.is_current_user_admin_or_superadmin()
          THEN p.stamp
          ELSE NULL
        END AS stamp

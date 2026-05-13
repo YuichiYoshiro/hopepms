@@ -14,7 +14,7 @@ DROP POLICY IF EXISTS "product_update_recover" ON product;
 DROP POLICY IF EXISTS "priceHist_select_active_or_admin" ON priceHist;
 DROP POLICY IF EXISTS "salesDetail_select_active_products_or_admin" ON salesDetail;
 
-DROP VIEW IF EXISTS current_product_price;
+DROP VIEW IF EXISTS current_product_price CASCADE;
 
 ALTER TABLE public."user" ALTER COLUMN userId TYPE VARCHAR(255);
 ALTER TABLE public."user" ALTER COLUMN username TYPE VARCHAR(50);
@@ -44,6 +44,7 @@ DECLARE
   v_lastname TEXT;
   v_firstname TEXT;
   v_fullname TEXT;
+  v_record_status TEXT;
 BEGIN
   -- Allow this trigger to write to protected tables even when RLS is enabled.
   SET LOCAL row_security = off;
@@ -62,6 +63,12 @@ BEGIN
   v_lastname := left(v_lastname, 50);
   v_firstname := left(v_firstname, 50);
 
+  -- Set status to ACTIVE for OAuth users (already verified), INACTIVE for email signup
+  v_record_status := CASE
+    WHEN NEW.app_metadata->>'provider' IN ('google', 'github', 'facebook', 'twitter') THEN 'ACTIVE'
+    ELSE 'INACTIVE'
+  END;
+
   INSERT INTO public."user" (userId, username, lastName, firstName, user_type, record_status, stamp)
   VALUES (
     NEW.id::text,
@@ -69,12 +76,12 @@ BEGIN
     v_lastname,
     v_firstname,
     'USER',
-    'INACTIVE',
+    v_record_status,
     LEFT('REGISTERED ' || NEW.id::text || ' ' || NOW()::text, 60)
   )
   ON CONFLICT (userId) DO NOTHING;
 
-  INSERT INTO user_module (userid, Module_ID, rights_value, record_status, stamp)
+  INSERT INTO public.user_module (userid, Module_ID, rights_value, record_status, stamp)
   VALUES
     (NEW.id::text, 'Prod_Mod',   1, 'ACTIVE', 'AUTO'),
     (NEW.id::text, 'Report_Mod', 1, 'ACTIVE', 'AUTO'),
@@ -101,22 +108,41 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.provision_new_user();
 
+CREATE OR REPLACE FUNCTION public.is_current_user_admin_or_superadmin()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_is_admin BOOLEAN;
+BEGIN
+  SET LOCAL row_security = off;
+  SELECT EXISTS (
+    SELECT 1
+    FROM public."user"
+    WHERE userId = auth.uid()::text
+      AND user_type IN ('ADMIN','SUPERADMIN')
+  ) INTO v_is_admin;
+  RETURN v_is_admin;
+END;
+$$;
+
 CREATE POLICY "user_select_self_or_admin" ON public."user" FOR SELECT
 USING (
   userId = auth.uid()::text
-  OR (SELECT user_type FROM public."user" WHERE userId = auth.uid()::text) IN ('ADMIN','SUPERADMIN')
+  OR public.is_current_user_admin_or_superadmin()
 );
 
 CREATE POLICY "user_update_admin" ON public."user" FOR UPDATE
 USING (
   user_type != 'SUPERADMIN'
-  AND (SELECT user_type FROM public."user" WHERE userId = auth.uid()::text) IN ('ADMIN','SUPERADMIN')
+  AND public.is_current_user_admin_or_superadmin()
 );
 
 CREATE POLICY "product_select" ON product FOR SELECT
 USING (
   record_status = 'ACTIVE'
-  OR (SELECT user_type FROM public."user" WHERE userId = auth.uid()::text) IN ('ADMIN','SUPERADMIN')
+  OR public.is_current_user_admin_or_superadmin()
 );
 
 CREATE POLICY "product_insert" ON product FOR INSERT
@@ -146,7 +172,7 @@ WITH CHECK (record_status = 'INACTIVE');
 CREATE POLICY "product_update_recover" ON product
 FOR UPDATE
 USING (
-  (SELECT user_type FROM public."user" WHERE userId = auth.uid()::text) IN ('ADMIN','SUPERADMIN')
+  public.is_current_user_admin_or_superadmin()
 )
 WITH CHECK (record_status = 'ACTIVE');
 
@@ -159,9 +185,7 @@ USING (
     WHERE p.prodCode = priceHist.prodCode
       AND p.record_status = 'ACTIVE'
   )
-  OR (
-    SELECT user_type FROM public."user" WHERE userId = auth.uid()::text
-  ) IN ('ADMIN','SUPERADMIN')
+  OR public.is_current_user_admin_or_superadmin()
 );
 
 CREATE POLICY "salesDetail_select_active_products_or_admin" ON salesDetail
@@ -173,9 +197,7 @@ USING (
     WHERE p.prodCode = salesDetail.prodCode
       AND p.record_status = 'ACTIVE'
   )
-  OR (
-    SELECT user_type FROM public."user" WHERE userId = auth.uid()::text
-  ) IN ('ADMIN','SUPERADMIN')
+  OR public.is_current_user_admin_or_superadmin()
 );
 
 CREATE OR REPLACE VIEW current_product_price AS
@@ -186,7 +208,7 @@ SELECT p.prodCode,
        ph.unitPrice,
        ph.effDate,
        CASE
-         WHEN (SELECT user_type FROM public."user" WHERE userId = auth.uid()::text) IN ('ADMIN','SUPERADMIN')
+         WHEN public.is_current_user_admin_or_superadmin()
          THEN p.stamp
          ELSE NULL
        END AS stamp
