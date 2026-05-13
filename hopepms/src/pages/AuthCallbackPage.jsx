@@ -7,10 +7,11 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      if (session) {
+      const { data, error } = await supabase.auth.getSessionFromUrl()
+      if (error) {
+        console.error('Auth callback error', error)
+      }
+      if (data?.session) {
         navigate('/products')
       } else {
         navigate('/login')

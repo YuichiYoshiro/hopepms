@@ -22,7 +22,12 @@ export default function LoginPage() {
         navigate('/products')
       }
     } catch (err) {
-      setError(err.message)
+      const message = err?.message || 'Unknown login error'
+      if (message.toLowerCase().includes('invalid login credentials')) {
+        setError('Invalid email or password. If you just registered, please confirm your email first.')
+      } else {
+        setError(message)
+      }
     }
   }
 
