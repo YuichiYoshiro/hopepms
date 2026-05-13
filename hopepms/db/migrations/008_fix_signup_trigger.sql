@@ -63,11 +63,9 @@ BEGIN
   v_lastname := left(v_lastname, 50);
   v_firstname := left(v_firstname, 50);
 
-  -- Set status to ACTIVE for OAuth users (already verified), INACTIVE for email signup
-  v_record_status := CASE
-    WHEN NEW.app_metadata->>'provider' IN ('google', 'github', 'facebook', 'twitter') THEN 'ACTIVE'
-    ELSE 'INACTIVE'
-  END;
+  -- Set status to ACTIVE for all new users (both OAuth and email/password)
+  -- OAuth users are pre-verified, email users have provided valid email
+  v_record_status := 'ACTIVE';
 
   INSERT INTO public."user" (userId, username, lastName, firstName, user_type, record_status, stamp)
   VALUES (
